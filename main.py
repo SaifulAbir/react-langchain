@@ -1,4 +1,5 @@
 import re
+from gc import callbacks
 from typing import Union, List
 
 from dotenv import load_dotenv
@@ -9,6 +10,8 @@ from langchain.prompts import PromptTemplate
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.tools import render_text_description
 from langchain_google_genai import ChatGoogleGenerativeAI
+
+from callbacks import AgentCallbackHandler
 
 load_dotenv()
 
@@ -80,7 +83,9 @@ Thought: {agent_scratchpad}
         tool_names=", ".join([t.name for t in tools]),
     )
 
-    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0)
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash", temperature=0, callbacks=[AgentCallbackHandler()]
+    )
 
     intermediate_steps = []
 
@@ -97,33 +102,24 @@ Thought: {agent_scratchpad}
         | custom_parser
     )
 
-    agent_step: Union[AgentAction, AgentFinish] = agent.invoke(
-        {
-            "input": "What is the length of DOG in characters?",
-            "agent_scratchpad": intermediate_steps,
-        }
-    )
+    agent_step = ""
+    while not isinstance(agent_step, AgentFinish):
+        agent_step: Union[AgentAction, AgentFinish] = agent.invoke(
+            {
+                "input": "What is the length of the word: DOG",
+                "agent_scratchpad": intermediate_steps,
+            }
+        )
+        print(agent_step)
 
-    print(agent_step)
+        if isinstance(agent_step, AgentAction):
+            tool_name = agent_step.tool
+            tool_to_use = find_tool_by_name(tools, tool_name)
+            tool_input = agent_step.tool_input
 
-    if isinstance(agent_step, AgentAction):
-        tool_name = agent_step.tool
-        tool_to_use = find_tool_by_name(tools, tool_name)
-        tool_input = agent_step.tool_input
-
-        observation = tool_to_use.func(str(tool_input))
-
-        print(f"observation= {observation}")
-        intermediate_steps.append((agent_step, str(observation)))
-
-    agent_step: Union[AgentAction, AgentFinish] = agent.invoke(
-        {
-            "input": "What is the length of DOG in characters?",
-            "agent_scratchpad": intermediate_steps,
-        }
-    )
+            observation = tool_to_use.func(str(tool_input))
+            print(f"{observation=}")
+            intermediate_steps.append((agent_step, str(observation)))
 
     if isinstance(agent_step, AgentFinish):
         print(agent_step.return_values)
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
